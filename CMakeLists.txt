@@ -1,0 +1,73 @@
+cmake_minimum_required(VERSION 3.15)
+
+project(transit_format_c VERSION 0.8.0 LANGUAGES C)
+
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+
+option(TRANSIT_BUILD_TESTS "Build the tests" ON)
+option(TRANSIT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+if(MSVC)
+  set(TRANSIT_WARNINGS /W4)
+  if(TRANSIT_WARNINGS_AS_ERRORS)
+    list(APPEND TRANSIT_WARNINGS /WX)
+  endif()
+else()
+  set(TRANSIT_WARNINGS -Wall -Wextra -pedantic -Wshadow -Wconversion -Wno-sign-conversion)
+  if(TRANSIT_WARNINGS_AS_ERRORS)
+    list(APPEND TRANSIT_WARNINGS -Werror)
+  endif()
+endif()
+
+add_library(transit
+  src/transit_json.c
+  src/transit_msgpack.c
+  src/transit_read.c
+  src/transit_util.c
+  src/transit_value.c
+  src/transit_write.c)
+add_library(transit::transit ALIAS transit)
+target_include_directories(transit PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_options(transit PRIVATE ${TRANSIT_WARNINGS})
+set_target_properties(transit PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+  C_VISIBILITY_PRESET default)
+if(NOT MSVC)
+  find_library(MATH_LIBRARY m)
+  if(MATH_LIBRARY)
+    target_link_libraries(transit PUBLIC ${MATH_LIBRARY})
+  endif()
+endif()
+
+add_executable(transit-roundtrip tools/transit_roundtrip.c)
+target_link_libraries(transit-roundtrip PRIVATE transit)
+target_compile_options(transit-roundtrip PRIVATE ${TRANSIT_WARNINGS})
+
+include(GNUInstallDirs)
+install(TARGETS transit transit-roundtrip EXPORT transitTargets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES include/transit.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT transitTargets NAMESPACE transit:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/transit
+  FILE transitConfig.cmake)
+
+if(TRANSIT_BUILD_TESTS)
+  enable_testing()
+  add_executable(transit-tests tests/test_transit.c)
+  target_link_libraries(transit-tests PRIVATE transit)
+  target_compile_options(transit-tests PRIVATE ${TRANSIT_WARNINGS})
+  set(TRANSIT_FORMAT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../transit-format" CACHE PATH
+      "A checkout of transit-format, for the exemplar tests")
+  add_test(NAME transit-tests COMMAND transit-tests)
+  set_tests_properties(transit-tests PROPERTIES ENVIRONMENT "TRANSIT_FORMAT_DIR=${TRANSIT_FORMAT_DIR}")
+endif()

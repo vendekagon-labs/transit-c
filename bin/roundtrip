@@ -1,0 +1,10 @@
+#!/bin/sh
+# Used by transit-format's verify harness. Builds transit-roundtrip the first
+# time (build output goes to stderr: stdout carries the data).
+
+cd `dirname $0`/..
+if [ ! -x build/transit-roundtrip ]; then
+  { cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DTRANSIT_BUILD_TESTS=OFF && \
+    cmake --build build --target transit-roundtrip; } 1>&2 || exit 1
+fi
+exec build/transit-roundtrip "$@"
