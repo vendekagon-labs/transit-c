@@ -320,9 +320,12 @@ static int marshal(writer *w, const transit_value *v, int as_key) {
     if (!v) return fail(w, TRANSIT_ERROR_UNSUPPORTED, "a NULL value");
     if (++w->depth > MAX_DEPTH) return fail(w, TRANSIT_ERROR_UNSUPPORTED, "nested too deeply");
     /* msgpack map keys can be any type, so like transit-java, nil,
-     * booleans, ints and floats are written as themselves there. */
-    if (as_key && w->msgpack && (v->type == TRANSIT_NIL || v->type == TRANSIT_BOOL ||
-                                 v->type == TRANSIT_INT || v->type == TRANSIT_FLOAT)) as_key = 0;
+     * booleans, ints and floats (other than NaN and the infinities, which
+     * are "~z" strings) are written as themselves there. */
+    if (as_key && w->msgpack &&
+        (v->type == TRANSIT_NIL || v->type == TRANSIT_BOOL || v->type == TRANSIT_INT ||
+         (v->type == TRANSIT_FLOAT && v->u.number == v->u.number && v->u.number != INFINITY &&
+          v->u.number != -INFINITY))) as_key = 0;
     switch (v->type) {
     case TRANSIT_NIL:
         if (as_key) r = emit_prefixed_cstr(w, "~_", "", 1);

@@ -551,6 +551,23 @@ static void test_msgpack_ints(void) {
         CHECK(back && back->u.coll.items[0]->u.integer == cases[i].i, "msgpack %lld reads back", (long long)cases[i].i);
         free(out);
     }
+    /* map keys: ground types as themselves, special numbers as (cached) key strings */
+    {
+        static const unsigned char expected[] = {
+            0x92, 0x84, 0xc0, 0x01, 0xc3, 0x02, 0x01, 0x03, 0xcb, 0x3f, 0xf8, 0, 0, 0, 0, 0, 0, 0x04,
+            0x81, 0xa5, '~', 'z', 'N', 'a', 'N', 0x05};
+        transit_value *keys = array_of(2, map_of(4, transit_nil(doc), num(1), transit_bool(doc, 1), num(2), num(1), num(3),
+                                                 flt(1.5), num(4)),
+                                       map_of(1, flt(NAN), num(5)));
+        unsigned char *out = (unsigned char *)written(keys, TRANSIT_MSGPACK, &len);
+        CHECK(out && len == sizeof(expected) && memcmp(out, expected, len) == 0, "msgpack map keys");
+        free(out);
+        /* the NaN key string is cached, as a key */
+        keys = array_of(2, map_of(1, flt(NAN), num(1)), map_of(1, flt(NAN), num(2)));
+        out = (unsigned char *)written(keys, TRANSIT_MSGPACK, &len);
+        CHECK(out && len >= 5 && memcmp(out + len - 5, "\x81\xa2^0\x02", 5) == 0, "NaN key cached");
+        free(out);
+    }
     /* uint64 beyond int64, float32 and bin, which transit writers don't use */
     v = transit_read(doc, u64, sizeof(u64), TRANSIT_MSGPACK, NULL);
     CHECK(v && v->type == TRANSIT_BIGINT && v->u.str.len == 20 && !memcmp(v->u.str.data, "18446744073709551615", 20), "uint64");
