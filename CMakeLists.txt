@@ -6,10 +6,19 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-option(TRANSIT_BUILD_TESTS "Build the tests" ON)
+# When used as a subproject (add_subdirectory or FetchContent), build just the
+# library and leave the build type to the parent project.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(TRANSIT_TOP_LEVEL ON)
+else()
+  set(TRANSIT_TOP_LEVEL OFF)
+endif()
+
+option(TRANSIT_BUILD_TESTS "Build the tests" ${TRANSIT_TOP_LEVEL})
+option(TRANSIT_BUILD_TOOLS "Build transit-roundtrip" ${TRANSIT_TOP_LEVEL})
 option(TRANSIT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+if(TRANSIT_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
@@ -48,15 +57,18 @@ if(NOT MSVC)
   endif()
 endif()
 
-add_executable(transit-roundtrip tools/transit_roundtrip.c)
-target_link_libraries(transit-roundtrip PRIVATE transit)
-target_compile_options(transit-roundtrip PRIVATE ${TRANSIT_WARNINGS})
-
 include(GNUInstallDirs)
-install(TARGETS transit transit-roundtrip EXPORT transitTargets
+install(TARGETS transit EXPORT transitTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+if(TRANSIT_BUILD_TOOLS)
+  add_executable(transit-roundtrip tools/transit_roundtrip.c)
+  target_link_libraries(transit-roundtrip PRIVATE transit)
+  target_compile_options(transit-roundtrip PRIVATE ${TRANSIT_WARNINGS})
+  install(TARGETS transit-roundtrip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 install(FILES include/transit.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(EXPORT transitTargets NAMESPACE transit:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/transit
   FILE transitConfig.cmake)

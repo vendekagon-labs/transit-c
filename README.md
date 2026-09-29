@@ -37,6 +37,23 @@ one (or pass `-DTRANSIT_FORMAT_DIR=...`). `cmake --install build` installs the
 library, `transit.h` and a CMake package, so other CMake projects can
 `find_package(transit)` and link `transit::transit`.
 
+To use it from another CMake project straight from GitHub, with
+[FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html):
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(transit
+  GIT_REPOSITORY https://github.com/vendekagon-labs/transit-c.git
+  GIT_TAG main)   # or a tag or commit
+FetchContent_MakeAvailable(transit)
+
+target_link_libraries(your_target PRIVATE transit::transit)
+```
+
+(Use `git@github.com:vendekagon-labs/transit-c.git` to fetch over SSH.) As a
+subproject it builds just the library; the tests and `transit-roundtrip` are
+built only when it's the top level project.
+
 The library is a handful of C files and one header, so it can also simply be
 compiled into another project's build (as an R package would, from `src/`).
 
