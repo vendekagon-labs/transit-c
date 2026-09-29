@@ -62,3 +62,21 @@ jobs:
             -DTRANSIT_FORMAT_DIR="$GITHUB_WORKSPACE/transit-format"
           cmake --build build
           ctest --test-dir build --output-on-failure
+
+  verify:
+    name: transit-format verify harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: transit-c
+      - uses: actions/checkout@v7
+        with:
+          repository: cognitect/transit-format
+          path: transit-format
+      - name: Install the clojure CLI
+        run: |
+          curl -sSL -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
+          chmod +x linux-install.sh
+          sudo ./linux-install.sh
+      - run: transit-c/bin/verify transit-format 200

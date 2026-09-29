@@ -155,6 +155,18 @@ cmake --build build-asan && ctest --test-dir build-asan
 transit-format's verify harness drives `bin/roundtrip`, which builds
 `transit-roundtrip` the first time it runs.
 
+## Contributing
+
+transit-c is maintained by [Vendekagon Labs](https://github.com/vendekagon-labs).
+Report problems and suggest changes with GitHub
+[issues](https://github.com/vendekagon-labs/transit-c/issues).
+
+Pull requests are welcome, but make sure they're well tested first: add tests
+for what you change, and check that the tests pass (`ctest`, also in a
+sanitizer build, as above) and that transit-format's verify harness
+(`bin/verify`, which needs the
+[clojure CLI](https://clojure.org/guides/install_clojure)) passes.
+
 ## Copyright and License
 
 Copyright © 2026 Vendekagon Labs LLC
