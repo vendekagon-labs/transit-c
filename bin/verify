@@ -13,6 +13,10 @@ HERE=`pwd`
 GEN=${2:-100}
 PROJECT=`python3 -c "import os, sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))" "$HERE" "$FORMAT"`
 DEPS='{:paths ["src"] :deps {org.clojure/clojure {:mvn/version "1.12.4"} com.cognitect/transit-clj {:mvn/version "1.1.347"} org.clojure/data.generators {:mvn/version "1.1.1"} commons-codec/commons-codec {:mvn/version "1.21.0"}}}'
+# Build or install whatever bin/roundtrip needs first, so the harness's
+# per-value timeout doesn't include it.
+bin/roundtrip json < /dev/null > /dev/null
+
 LOG=`mktemp`
 trap 'rm -f "$LOG"' EXIT
 status=0
@@ -28,6 +32,11 @@ for enc in json json-verbose msgpack; do
   if grep -a -q -E 'roundtrip error|Read Error|Response Timeout|Disconnected|Exception' "$LOG" ||
      ! grep -a -q 'successful' "$LOG"; then
     grep -a -E -A3 'roundtrip error|Read Error|Response Timeout|Disconnected|Exception' "$LOG" | cut -c1-300
+    if [ -n "$GITHUB_ACTIONS" ]; then
+      # annotations, which show on the workflow run
+      grep -a -E -A3 'roundtrip error|Read Error|Response Timeout|Disconnected|Exception' "$LOG" | head -12 |
+        cut -c1-300 | while IFS= read -r line; do echo "::error::$enc: $line"; done
+    fi
     status=1
   fi
 done
