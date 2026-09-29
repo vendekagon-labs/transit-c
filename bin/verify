@@ -33,9 +33,12 @@ for enc in json json-verbose msgpack; do
      ! grep -a -q 'successful' "$LOG"; then
     grep -a -E -A3 'roundtrip error|Read Error|Response Timeout|Disconnected|Exception' "$LOG" | cut -c1-300
     if [ -n "$GITHUB_ACTIONS" ]; then
-      # annotations, which show on the workflow run
-      grep -a -E -A3 'roundtrip error|Read Error|Response Timeout|Disconnected|Exception' "$LOG" | head -12 |
-        cut -c1-300 | while IFS= read -r line; do echo "::error::$enc: $line"; done
+      # One annotation per encoding (GitHub shows at most 10 per step), which
+      # can be read without signing in, unlike the log. Newlines are %0A.
+      grep -a -E -A3 'roundtrip error|Read Error|Response Timeout|Disconnected|Exception' "$LOG" | head -40 |
+        cut -c1-300 | awk -v enc="$enc" '
+          { gsub(/%/, "%25"); gsub(/\r/, "%0D"); msg = msg (NR > 1 ? "%0A" : "") $0 }
+          END { print "::error title=verify " enc "::" msg }'
     fi
     status=1
   fi
