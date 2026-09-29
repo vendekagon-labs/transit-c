@@ -653,6 +653,102 @@ static void test_streams(void) {
     CHECK(read_stream("\x92\x01", 2, TRANSIT_MSGPACK, values, 8, &err) == 0 && err.code == TRANSIT_ERROR_TRUNCATED, "truncated msgpack");
 }
 
+/* Feeding: data given to the stream in chunks, reading between them. */
+static int read_fed(const unsigned char *data, size_t len, size_t chunk, transit_format format,
+                    transit_value **values, int max, transit_error *err) {
+    transit_stream *s = transit_stream_new(format, NULL, NULL);
+    size_t at = 0;
+    int n = 0;
+    transit_value *v;
+    err->code = TRANSIT_OK;
+    while (at < len) {
+        size_t k = len - at < chunk ? len - at : chunk;
+        transit_stream_feed(s, data + at, k);
+        at += k;
+        while (n < max && (v = transit_stream_read(s, doc, err)) != NULL) values[n++] = v;
+        if (err->code != TRANSIT_OK) {
+            transit_stream_free(s);
+            return n;
+        }
+    }
+    transit_stream_end(s);
+    while (n < max && (v = transit_stream_read(s, doc, err)) != NULL) values[n++] = v;
+    transit_stream_free(s);
+    return n;
+}
+
+static void test_feeding(void) {
+    static const size_t chunks[] = {1, 2, 3, 7, 64, 100000};
+    transit_value *values[8];
+    transit_value *expected = array_of(6, num(1), str("~tilde"), array_of(2, kw("abcd"), kw("abcd")),
+                                       map_of(1, kw("abcd"), str("quote \" and backslash \\ \xc3\xa9 \xf0\x9f\x98\x80")),
+                                       as(TRANSIT_SET, array_of(2, num(1), num(2))), transit_nil(doc));
+    transit_format formats[3];
+    transit_error err;
+    size_t f, c, i;
+    formats[0] = TRANSIT_JSON;
+    formats[1] = TRANSIT_JSON_VERBOSE;
+    formats[2] = TRANSIT_MSGPACK;
+    for (f = 0; f < 3; f++) {
+        transit_buffer all = {0};
+        for (i = 0; i < expected->u.coll.count; i++) transit_write(expected->u.coll.items[i], formats[f], &all, NULL);
+        if (f < 2) {
+            /* whitespace between values */
+            transit_buffer spaced = {0};
+            append(&spaced, " \n", 2);
+            append(&spaced, all.data, all.len);
+            append(&spaced, "\t ", 2);
+            transit_buffer_free(&all);
+            all = spaced;
+        }
+        for (c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+            int n = read_fed(all.data, all.len, chunks[c], formats[f], values, 8, &err);
+            CHECK(n == 6 && err.code == TRANSIT_OK, "feeding format %d in chunks of %d: read %d values (%s)",
+                  (int)f, (int)chunks[c], n, err.message);
+            for (i = 0; i < (size_t)n && i < 6; i++)
+                CHECK(transit_equal(values[i], expected->u.coll.items[i]), "feeding format %d, chunks of %d: value %d",
+                      (int)f, (int)chunks[c], (int)i);
+        }
+        /* cut off part way through the last value */
+        {
+            int n = read_fed(all.data, all.len - (f < 2 ? 4 : 1), 5, formats[f], values, 8, &err);
+            CHECK(n == 5 && err.code == TRANSIT_ERROR_TRUNCATED, "feeding format %d: truncation (%d values, code %d)",
+                  (int)f, n, (int)err.code);
+        }
+        transit_buffer_free(&all);
+    }
+    /* the cache rollover payload, a byte at a time: large values scan in linear time */
+    {
+        transit_value *v = wrapping_value();
+        size_t len;
+        char *mp = written(v, TRANSIT_MSGPACK, &len), *js = json(v);
+        CHECK(read_fed((const unsigned char *)mp, len, 1, TRANSIT_MSGPACK, values, 8, &err) == 1 &&
+              transit_equal(values[0], v), "large msgpack value fed a byte at a time");
+        CHECK(read_fed((const unsigned char *)js, strlen(js), 1, TRANSIT_JSON, values, 8, &err) == 1 &&
+              transit_equal(values[0], v), "large JSON value fed a byte at a time");
+        free(mp);
+        free(js);
+    }
+    CHECK(read_fed((const unsigned char *)"", 0, 1, TRANSIT_JSON, values, 8, &err) == 0 && err.code == TRANSIT_OK, "empty fed stream");
+    CHECK(read_fed((const unsigned char *)"x", 1, 1, TRANSIT_JSON, values, 8, &err) == 0 && err.code == TRANSIT_ERROR_SYNTAX, "bad JSON fed");
+    CHECK(read_fed((const unsigned char *)"\xd4\x01\x00", 3, 1, TRANSIT_MSGPACK, values, 8, &err) == 0 &&
+          err.code == TRANSIT_ERROR_SYNTAX, "msgpack ext fed");
+    /* no value yet is not the end, until transit_stream_end */
+    {
+        transit_stream *s = transit_stream_new(TRANSIT_JSON, NULL, NULL);
+        transit_stream_feed(s, "[1,", 3);
+        CHECK(transit_stream_read(s, doc, &err) == NULL && err.code == TRANSIT_OK, "incomplete value: not yet");
+        transit_stream_feed(s, "2]", 2);
+        {
+            transit_value *v = transit_stream_read(s, doc, &err);
+            CHECK(v && transit_equal(v, array_of(2, num(1), num(2))), "completed by the next feed");
+        }
+        transit_stream_end(s);
+        CHECK(transit_stream_read(s, doc, &err) == NULL && err.code == TRANSIT_OK, "then the end");
+        transit_stream_free(s);
+    }
+}
+
 static void test_errors(void) {
     static const unsigned char ext[] = {0xd4, 0x01, 0x00};
     transit_error err;
@@ -721,6 +817,24 @@ static void test_mutations(void) {
                     transit_buffer_free(&out);
                 }
                 total++;
+                /* and the same data fed in random chunks */
+                {
+                    transit_stream *st = transit_stream_new(format, NULL, NULL);
+                    size_t at = 0;
+                    transit_error ferr;
+                    ferr.code = TRANSIT_OK;
+                    while (at < n && ferr.code == TRANSIT_OK) {
+                        size_t chunk = 1 + (size_t)(next_random() % 97);
+                        if (chunk > n - at) chunk = n - at;
+                        transit_stream_feed(st, copy + at, chunk);
+                        at += chunk;
+                        while (transit_stream_read(st, scratch, &ferr) != NULL) {}
+                    }
+                    transit_stream_end(st);
+                    while (ferr.code == TRANSIT_OK && transit_stream_read(st, scratch, &ferr) != NULL) {}
+                    CHECK(ferr.code == TRANSIT_OK || ferr.message[0], "a failed fed read says why");
+                    transit_stream_free(st);
+                }
                 transit_doc_free(scratch);
                 free(copy);
             }
@@ -737,6 +851,7 @@ int main(void) {
     test_msgpack_ints();
     test_values();
     test_streams();
+    test_feeding();
     test_errors();
     test_locale();
     test_mutations();

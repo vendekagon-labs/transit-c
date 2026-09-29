@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} (${{ matrix.cc }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, cc: gcc }
+          - { os: ubuntu-latest, cc: clang }
+          - { os: ubuntu-24.04-arm, cc: gcc }
+          - { os: macos-latest, cc: clang }
+          - { os: windows-latest, cc: msvc }
+          - { os: windows-11-arm, cc: msvc }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: transit-c
+      - uses: actions/checkout@v7
+        with:
+          repository: cognitect/transit-format
+          path: transit-format
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "${{ matrix.cc }}" != msvc ]; then export CC=${{ matrix.cc }}; fi
+          cmake -S transit-c -B build -DTRANSIT_WARNINGS_AS_ERRORS=ON -DTRANSIT_FORMAT_DIR="$GITHUB_WORKSPACE/transit-format"
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Shared library
+        shell: bash
+        run: |
+          cmake -S transit-c -B build-shared -DBUILD_SHARED_LIBS=ON -DTRANSIT_WARNINGS_AS_ERRORS=ON -DTRANSIT_FORMAT_DIR="$GITHUB_WORKSPACE/transit-format"
+          cmake --build build-shared --config Release
+          ctest --test-dir build-shared -C Release --output-on-failure
+
+  sanitizers:
+    name: sanitizers (address, undefined)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: transit-c
+      - uses: actions/checkout@v7
+        with:
+          repository: cognitect/transit-format
+          path: transit-format
+      - name: Build and test
+        env:
+          CC: clang
+        run: |
+          cmake -S transit-c -B build -DCMAKE_BUILD_TYPE=Debug -DTRANSIT_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer" \
+            -DTRANSIT_FORMAT_DIR="$GITHUB_WORKSPACE/transit-format"
+          cmake --build build
+          ctest --test-dir build --output-on-failure

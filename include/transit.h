@@ -145,14 +145,30 @@ transit_value *transit_read(transit_doc *doc, const void *data, size_t len,
                             transit_format format, transit_error *err);
 
 /* Reading a sequence of values as they arrive, such as from a pipe or
- * socket. getc returns the next byte (0-255), or -1 at the end of the input;
- * input is read only as far as the end of each value. */
+ * socket. A stream gets its input in one of two ways:
+ *
+ * - Pulling: getc returns the next byte (0-255), or -1 at the end of the
+ *   input. Input is read only as far as the end of each value.
+ * - Feeding: create the stream with getc NULL, and pass it data in chunks of
+ *   any size, as it arrives, with transit_stream_feed; call
+ *   transit_stream_end when there is no more. This suits callers that read
+ *   in blocks, and language bindings.
+ */
 typedef int (*transit_getc_fn)(void *ctx);
 typedef struct transit_stream transit_stream;
 
 transit_stream *transit_stream_new(transit_format format, transit_getc_fn getc, void *ctx);
-/* The next value, or NULL: at the end of the input (err->code is TRANSIT_OK),
- * or on error. */
+
+/* Feeding: adds data (which is copied). Returns 0, or -1 when out of memory. */
+int transit_stream_feed(transit_stream *s, const void *data, size_t len);
+/* Feeding: there's no more data. */
+void transit_stream_end(transit_stream *s);
+
+/* The next value, or NULL with err->code TRANSIT_OK when there isn't one:
+ * at the end of the input, or, when feeding and transit_stream_end hasn't
+ * been called, until more data has been fed. NULL with another code is an
+ * error (including TRANSIT_ERROR_TRUNCATED if the input ends part way
+ * through a value). */
 transit_value *transit_stream_read(transit_stream *s, transit_doc *doc, transit_error *err);
 void transit_stream_free(transit_stream *s);
 

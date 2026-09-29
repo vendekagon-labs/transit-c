@@ -23,6 +23,8 @@ if(TRANSIT_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 if(MSVC)
+  # fopen, getenv and friends are standard C; don't warn about them
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
   set(TRANSIT_WARNINGS /W4)
   if(TRANSIT_WARNINGS_AS_ERRORS)
     list(APPEND TRANSIT_WARNINGS /WX)
@@ -46,7 +48,10 @@ target_include_directories(transit PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_compile_options(transit PRIVATE ${TRANSIT_WARNINGS})
+# Export everything from a Windows DLL (the API is all of transit.h).
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 set_target_properties(transit PROPERTIES
+  WINDOWS_EXPORT_ALL_SYMBOLS ON
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
   C_VISIBILITY_PRESET default)

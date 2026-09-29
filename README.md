@@ -92,9 +92,25 @@ int main(void) {
 }
 ```
 
-To read a sequence of values as they arrive, create a stream with a function
-returning the next byte (or -1 at the end of the input) and call
-`transit_stream_read` until it returns `NULL`; see `tools/transit_roundtrip.c`.
+To read a sequence of values as they arrive, use a stream. Either give it
+data in chunks as you receive it:
+
+```c
+transit_stream *s = transit_stream_new(TRANSIT_JSON, NULL, NULL);
+/* for each chunk read from a socket, file or pipe: */
+transit_stream_feed(s, chunk, chunk_len);
+while ((v = transit_stream_read(s, doc, &err)) != NULL) {
+    /* use v */
+}
+/* NULL with err.code == TRANSIT_OK: no complete value yet, feed more */
+/* at the end of the input: */
+transit_stream_end(s);
+/* then read any last values; a value cut off part way is an error */
+```
+
+or create it with a function that returns the next byte (or -1 at the end of
+the input), in which case input is read only as far as the end of each value;
+see `tools/transit_roundtrip.c`.
 
 ## Types
 
